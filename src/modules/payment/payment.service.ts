@@ -56,7 +56,6 @@ export async function createPaymentOrder(orderId: string, userId: string) {
         userId,
         amount: order.total_amount,
         razorpayOrderId: rzpOrder.id,
-        paymentMethod: 'razorpay',
     });
 
     return {
