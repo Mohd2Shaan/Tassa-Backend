@@ -24,16 +24,6 @@ export async function sendOtp(phone: string): Promise<string> {
     // Handles: +919876543210, 919876543210, 9876543210, 09876543210
     const cleanPhone = phone.replace(/^\+?0?91/, '').replace(/^0/, '').slice(-10);
 
-    // DEV OTP BYPASS: If enabled, return mock session ID for any phone
-    if (env.DEV_OTP_BYPASS) {
-        const mockSessionId = `dev-session:${cleanPhone}`;
-        logger.warn('DEV OTP bypass enabled: returning mock session', {
-            phone: `***${cleanPhone.slice(-4)}`,
-            sessionId: mockSessionId,
-        });
-        return mockSessionId;
-    }
-
     if (!apiKey || apiKey === 'your_2factor_api_key') {
         throw new Error('2Factor API key not configured. Set TWOFACTOR_API_KEY in .env');
     }
@@ -78,23 +68,6 @@ export async function sendOtp(phone: string): Promise<string> {
  */
 export async function verifyOtp(sessionId: string, otp: string): Promise<boolean> {
     const apiKey = env.TWOFACTOR_API_KEY;
-
-    // DEV OTP BYPASS: If bypass enabled and sessionId is from dev, validate against hardcoded OTP
-    if (env.DEV_OTP_BYPASS && sessionId.startsWith('dev-session:')) {
-        const isValid = otp === env.DEV_OTP_CODE;
-        if (isValid) {
-            logger.warn('DEV OTP bypass: OTP verified successfully', {
-                sessionId: sessionId.slice(0, 15) + '...',
-            });
-        } else {
-            logger.warn('DEV OTP bypass: OTP verification failed', {
-                sessionId: sessionId.slice(0, 15) + '...',
-                provided: otp.replace(/./g, '*'),
-                expected: env.DEV_OTP_CODE.replace(/./g, '*'),
-            });
-        }
-        return isValid;
-    }
 
     if (!apiKey || apiKey === 'your_2factor_api_key') {
         throw new Error('2Factor API key not configured. Set TWOFACTOR_API_KEY in .env');

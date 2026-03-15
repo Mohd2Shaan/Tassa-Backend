@@ -20,7 +20,7 @@ async function seed(): Promise<void> {
         // --------------------------------------------------
         const userResult = await client.query(`
             INSERT INTO users (firebase_uid, phone, full_name, email, status, is_phone_verified)
-            VALUES ('seed_vendor_uid_001', '+919876543210', 'Dev Vendor', 'vendor@tassa.dev', 'active', TRUE)
+            VALUES ('seed_vendor_uid_001', '+918021026252', 'Tassa Vendor', 'vendor@tassa.dev', 'active', TRUE)
             ON CONFLICT (firebase_uid) DO UPDATE SET full_name = EXCLUDED.full_name
             RETURNING id
         `);
@@ -54,89 +54,89 @@ async function seed(): Promise<void> {
         const vendorProfileId = vpResult.rows[0].id;
 
         // --------------------------------------------------
-        // 3. Create a sample customer address (for delivery estimate)
+        // 3. Create a sample customer address (Kelambakkam area)
         // --------------------------------------------------
         await client.query(`
             INSERT INTO addresses (user_id, label, full_name, phone, address_line1, city, state, pincode,
                 latitude, longitude, is_default)
-            VALUES ($1, 'home', 'Dev Vendor', '+919876543210',
-                'House #5, Street 12', 'Nuh', 'Haryana', '122107',
-                28.1050, 77.0000, TRUE)
+            VALUES ($1, 'home', 'Tassa Vendor', '+918021026252',
+                'Rajiv Gandhi Salai, Kelambakkam', 'Chennai', 'Tamil Nadu', '603103',
+                12.8437, 80.1518, TRUE)
             ON CONFLICT DO NOTHING
         `, [vendorUserId]);
 
         // --------------------------------------------------
-        // 4. Create sample restaurants (Nuh/Bhadas area)
+        // 4. Create sample restaurants (Kelambakkam / OMR, Chennai area)
         // --------------------------------------------------
 
-        // Restaurant 1: Spice Garden — Indian / Biryani / Chicken
+        // Restaurant 1: Spice Garden — Indian / Biryani / Chicken (Sholinganallur, ~7km)
         const r1 = await client.query(`
             INSERT INTO restaurants (vendor_id, name, description, address_line1, city, state, pincode,
                 latitude, longitude, cuisine_types, avg_cost_for_two, avg_prep_time_min,
                 min_order_amount, is_pure_veg, status, is_open, rating_avg, rating_count)
             VALUES ($1, 'Spice Garden', 'Authentic Indian cuisine with fresh spices and traditional recipes',
-                'Main Market, Bhadas', 'Nuh', 'Haryana', '122107',
-                28.1035, 76.9985, ARRAY['Indian','Biryani','Chicken'], 50000, 25,
+                'OMR, Sholinganallur', 'Chennai', 'Tamil Nadu', '600119',
+                12.8908, 80.2273, ARRAY['Indian','Biryani','Chicken'], 50000, 25,
                 15000, FALSE, 'active', TRUE, 4.3, 128)
             ON CONFLICT DO NOTHING RETURNING id
         `, [vendorProfileId]);
 
-        // Restaurant 2: Pizza Paradise — Pizza / Italian / Burger
+        // Restaurant 2: Pizza Paradise — Pizza / Italian / Burger (Thoraipakkam, ~12km)
         const r2 = await client.query(`
             INSERT INTO restaurants (vendor_id, name, description, address_line1, city, state, pincode,
                 latitude, longitude, cuisine_types, avg_cost_for_two, avg_prep_time_min,
                 min_order_amount, is_pure_veg, status, is_open, rating_avg, rating_count)
             VALUES ($1, 'Pizza Paradise', 'Wood-fired pizzas, burgers, and Italian favorites',
-                'NIT Road, Nuh', 'Nuh', 'Haryana', '122107',
-                28.1075, 77.0025, ARRAY['Pizza','Italian','Burger'], 60000, 30,
+                'Thoraipakkam, OMR', 'Chennai', 'Tamil Nadu', '600097',
+                12.9363, 80.2330, ARRAY['Pizza','Italian','Burger'], 60000, 30,
                 20000, FALSE, 'active', TRUE, 4.5, 256)
             ON CONFLICT DO NOTHING RETURNING id
         `, [vendorProfileId]);
 
-        // Restaurant 3: Green Bowl — Healthy / Thali / Chinese
+        // Restaurant 3: Green Bowl — Healthy / Thali / Chinese (Siruseri, ~3km)
         const r3 = await client.query(`
             INSERT INTO restaurants (vendor_id, name, description, address_line1, city, state, pincode,
                 latitude, longitude, cuisine_types, avg_cost_for_two, avg_prep_time_min,
                 min_order_amount, is_pure_veg, status, is_open, rating_avg, rating_count)
             VALUES ($1, 'Green Bowl', 'Pure vegetarian thali, Chinese, and healthy bowls',
-                'Bus Stand Road, Nuh', 'Nuh', 'Haryana', '122107',
-                28.1010, 77.0040, ARRAY['Thali','Chinese','Healthy'], 35000, 15,
+                'SIPCOT IT Park, Siruseri', 'Chennai', 'Tamil Nadu', '603103',
+                12.8250, 80.1650, ARRAY['Thali','Chinese','Healthy'], 35000, 15,
                 10000, TRUE, 'active', TRUE, 4.1, 89)
             ON CONFLICT DO NOTHING RETURNING id
         `, [vendorProfileId]);
 
-        // Restaurant 4: Momos Corner — Momos / Chinese
+        // Restaurant 4: Momos Corner — Momos / Chinese (Kelambakkam, ~1km)
         const r4 = await client.query(`
             INSERT INTO restaurants (vendor_id, name, description, address_line1, city, state, pincode,
                 latitude, longitude, cuisine_types, avg_cost_for_two, avg_prep_time_min,
                 min_order_amount, is_pure_veg, status, is_open, rating_avg, rating_count)
             VALUES ($1, 'Momos Corner', 'Steamed, fried, and tandoori momos with special chutneys',
-                'Near Masjid Chowk, Nuh', 'Nuh', 'Haryana', '122107',
-                28.1060, 76.9960, ARRAY['Momos','Chinese','Street Food'], 20000, 15,
+                'Main Road, Kelambakkam', 'Chennai', 'Tamil Nadu', '603103',
+                12.8480, 80.1560, ARRAY['Momos','Chinese','Street Food'], 20000, 15,
                 8000, FALSE, 'active', TRUE, 4.6, 312)
             ON CONFLICT DO NOTHING RETURNING id
         `, [vendorProfileId]);
 
-        // Restaurant 5: Chicken Hub — Chicken / Burger
+        // Restaurant 5: Chicken Hub — Chicken / Burger (Navalur, ~9km)
         const r5 = await client.query(`
             INSERT INTO restaurants (vendor_id, name, description, address_line1, city, state, pincode,
                 latitude, longitude, cuisine_types, avg_cost_for_two, avg_prep_time_min,
                 min_order_amount, is_pure_veg, status, is_open, rating_avg, rating_count)
             VALUES ($1, 'Chicken Hub', 'Crispy fried chicken, juicy burgers, and shawarma',
-                'Sohna Road, Nuh', 'Nuh', 'Haryana', '122107',
-                28.1090, 77.0055, ARRAY['Chicken','Burger','Fast Food'], 40000, 20,
+                'Navalur Junction, OMR', 'Chennai', 'Tamil Nadu', '600130',
+                12.8465, 80.2268, ARRAY['Chicken','Burger','Fast Food'], 40000, 20,
                 12000, FALSE, 'active', TRUE, 4.4, 189)
             ON CONFLICT DO NOTHING RETURNING id
         `, [vendorProfileId]);
 
-        // Restaurant 6: Royal Desserts — Dessert / Sweets
+        // Restaurant 6: Royal Desserts — Dessert / Sweets (Padur, ~3km)
         const r6 = await client.query(`
             INSERT INTO restaurants (vendor_id, name, description, address_line1, city, state, pincode,
                 latitude, longitude, cuisine_types, avg_cost_for_two, avg_prep_time_min,
                 min_order_amount, is_pure_veg, status, is_open, rating_avg, rating_count)
             VALUES ($1, 'Royal Desserts', 'Traditional Indian sweets, ice cream, and desserts',
-                'Gandhi Chowk, Nuh', 'Nuh', 'Haryana', '122107',
-                28.1025, 77.0015, ARRAY['Dessert','Sweets','Ice Cream'], 25000, 10,
+                'Padur Main Road', 'Chennai', 'Tamil Nadu', '603103',
+                12.8370, 80.1760, ARRAY['Dessert','Sweets','Ice Cream'], 25000, 10,
                 5000, TRUE, 'active', TRUE, 4.7, 420)
             ON CONFLICT DO NOTHING RETURNING id
         `, [vendorProfileId]);
@@ -391,7 +391,7 @@ async function seed(): Promise<void> {
         `);
 
         await client.query('COMMIT');
-        logger.info('✅ Seeding complete — 6 restaurants with menus, 1 address, and 2 coupons created');
+        logger.info('✅ Seeding complete — 6 restaurants (Chennai/Kelambakkam) with menus, 1 address, and 2 coupons created');
     } catch (err) {
         await client.query('ROLLBACK');
         logger.error('Seeding failed', { error: err instanceof Error ? err.message : err });

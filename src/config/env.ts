@@ -71,12 +71,6 @@ export const env = {
     RATE_LIMIT_WINDOW_MS: parseInt(optionalEnv('RATE_LIMIT_WINDOW_MS', '900000'), 10),
     RATE_LIMIT_MAX_REQUESTS: parseInt(optionalEnv('RATE_LIMIT_MAX_REQUESTS', '100'), 10),
 
-    // Dev OTP Bypass (for testing with fake phone numbers like seeded vendor)
-    DEV_OTP_BYPASS: optionalEnv('NODE_ENV', 'development') === 'production'
-        ? false
-        : optionalEnv('DEV_OTP_BYPASS', 'true') === 'true',
-    DEV_OTP_CODE: optionalEnv('DEV_OTP_CODE', '123456'),
-
     // Helpers
     isDev: optionalEnv('NODE_ENV', 'development') === 'development',
     isProd: optionalEnv('NODE_ENV', 'development') === 'production',
