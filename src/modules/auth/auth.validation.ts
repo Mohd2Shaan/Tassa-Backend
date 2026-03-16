@@ -48,6 +48,7 @@ export const sendOtpSchema = {
     body: z.object({
         phone: z.string().min(10, 'Phone number must be at least 10 digits').max(15),
         isSignup: z.boolean().optional(),
+        role: z.enum(['CUSTOMER', 'VENDOR', 'DELIVERY_PARTNER']).optional(),
     }),
 };
 
@@ -62,5 +63,6 @@ export const verifySmsOtpSchema = {
         otp: z.string().length(6, 'OTP must be 6 digits'),
         fullName: z.string().min(1, 'Full name is required').max(100).optional(),
         deviceInfo: z.string().optional(),
+        role: z.enum(['CUSTOMER', 'VENDOR', 'DELIVERY_PARTNER']).optional(),
     }),
 };

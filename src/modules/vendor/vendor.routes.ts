@@ -9,6 +9,7 @@ const router = Router();
 
 // ---- Public routes (browsing) ----
 router.get('/restaurants/browse', ctrl.browseRestaurants);
+router.get('/restaurants/browse-items', ctrl.browseItems);
 router.get('/restaurants/:restaurantId/menu', validate(val.restaurantIdParamSchema), ctrl.getRestaurantMenu);
 router.get('/restaurants/:restaurantId/public', validate(val.restaurantIdParamSchema), ctrl.getRestaurant);
 

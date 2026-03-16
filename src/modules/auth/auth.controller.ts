@@ -73,10 +73,10 @@ export const me = asyncHandler(async (req: Request, res: Response) => {
  * Send OTP to phone via 2Factor SMS API.
  */
 export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
-    const { phone, isSignup } = req.body;
+    const { phone, isSignup, role } = req.body;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
-    const result = await authService.sendSmsOtp(phone, ipAddress, isSignup);
+    const result = await authService.sendSmsOtp(phone, ipAddress, isSignup, role);
 
     ApiResponse.success(res, result, 'OTP sent successfully');
 });
@@ -86,11 +86,11 @@ export const sendOtp = asyncHandler(async (req: Request, res: Response) => {
  * Verify OTP and login/register user.
  */
 export const verifySmsOtp = asyncHandler(async (req: Request, res: Response) => {
-    const { phone, sessionId, otp, deviceInfo, fullName } = req.body;
+    const { phone, sessionId, otp, deviceInfo, fullName, role } = req.body;
     const ipAddress = req.ip || req.socket.remoteAddress;
 
     const result = await authService.verifySmsOtpAndLogin(
-        phone, sessionId, otp, deviceInfo, ipAddress, fullName,
+        phone, sessionId, otp, deviceInfo, ipAddress, fullName, role,
     );
 
     const statusCode = result.user.isNewUser ? 201 : 200;

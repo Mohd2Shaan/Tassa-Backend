@@ -188,11 +188,13 @@ import * as smsService from '../../utils/sms.service';
  * Send OTP to phone via 2Factor SMS API.
  * Logs the OTP send in otp_logs table.
  * If isSignup is true, rejects the request when the phone already has an account.
+ * If requestedRole is set (login flow), validates the user exists with that role.
  */
 export async function sendSmsOtp(
     phone: string,
     ipAddress?: string,
     isSignup?: boolean,
+    requestedRole?: string,
 ): Promise<{ sessionId: string }> {
     // Normalize phone: ensure +91 prefix
     const e164Phone = phone.startsWith('+') ? phone : `+91${phone}`;
@@ -203,6 +205,22 @@ export async function sendSmsOtp(
         if (existingUser) {
             throw AppError.conflict(
                 'An account with this phone number already exists. Please log in instead.',
+            );
+        }
+    } else if (requestedRole && requestedRole !== ROLES.CUSTOMER) {
+        // Login flow with a non-customer role — validate user exists with that role
+        const existingUser = await authRepo.findUserByPhone(e164Phone);
+        if (!existingUser) {
+            const roleLabel = requestedRole === ROLES.VENDOR ? 'Seller' : 'Delivery Partner';
+            throw AppError.notFound(
+                `This phone number is not registered as a ${roleLabel}. Please sign up first or choose a different role.`,
+            );
+        }
+        const hasRole = await authRepo.userHasRole(existingUser.id, requestedRole);
+        if (!hasRole) {
+            const roleLabel = requestedRole === ROLES.VENDOR ? 'Seller' : 'Delivery Partner';
+            throw AppError.forbidden(
+                `This phone number is not registered as a ${roleLabel}. Please sign up first or choose a different role.`,
             );
         }
     }
@@ -222,8 +240,8 @@ export async function sendSmsOtp(
  * Flow:
  * 1. Verify OTP via 2Factor API
  * 2. Find or create user by phone
- * 3. Assign CUSTOMER role if new
- * 4. Generate JWT token pair
+ * 3. Assign requested role if new (default CUSTOMER)
+ * 4. Generate JWT token pair with correct activeRole
  * 5. Store refresh token hash
  */
 export async function verifySmsOtpAndLogin(
@@ -233,6 +251,7 @@ export async function verifySmsOtpAndLogin(
     deviceInfo?: string,
     ipAddress?: string,
     fullName?: string,
+    requestedRole?: string,
 ): Promise<AuthResult> {
     // 1. Verify OTP via 2Factor
     const isValid = await smsService.verifyOtp(sessionId, otp);
@@ -246,6 +265,9 @@ export async function verifySmsOtpAndLogin(
     // Log the successful OTP verification
     await authRepo.logOtpVerify(e164Phone);
 
+    // Determine the role to use (default to CUSTOMER)
+    const roleToUse = requestedRole || ROLES.CUSTOMER;
+
     // 2. Find or create user
     let user = await authRepo.findUserByPhone(e164Phone);
     let isNewUser = false;
@@ -254,12 +276,18 @@ export async function verifySmsOtpAndLogin(
         user = await authRepo.createUserByPhone(e164Phone, fullName);
         isNewUser = true;
 
-        // Assign default CUSTOMER role
-        await authRepo.assignRole(user.id, ROLES.CUSTOMER);
+        // Assign the requested role (default CUSTOMER)
+        await authRepo.assignRole(user.id, roleToUse);
+        // Also assign CUSTOMER if they signed up as vendor/delivery
+        // so they can also browse as customer
+        if (roleToUse !== ROLES.CUSTOMER) {
+            await authRepo.assignRole(user.id, ROLES.CUSTOMER);
+        }
 
         logger.info('New user registered via SMS OTP', {
             userId: user.id,
             phone: e164Phone.slice(0, -4).replace(/./g, '*') + e164Phone.slice(-4),
+            role: roleToUse,
         });
     }
 
@@ -277,7 +305,18 @@ export async function verifySmsOtpAndLogin(
         roleNames.push(ROLES.CUSTOMER);
     }
 
-    const activeRole = roleNames.includes(ROLES.CUSTOMER) ? ROLES.CUSTOMER : roleNames[0];
+    // Validate existing user has the requested role
+    if (!isNewUser && !roleNames.includes(roleToUse)) {
+        const roleLabel = roleToUse === ROLES.VENDOR ? 'Seller'
+            : roleToUse === ROLES.DELIVERY_PARTNER ? 'Delivery Partner'
+            : 'Customer';
+        throw AppError.forbidden(
+            `This phone number is not registered as a ${roleLabel}. Please sign up for this role first.`,
+        );
+    }
+
+    // Set activeRole to what the user requested (not always CUSTOMER)
+    const activeRole = roleNames.includes(roleToUse) ? roleToUse : roleNames[0];
 
     // 4. Generate token pair
     const jwtPayload: TassaJwtPayload = {

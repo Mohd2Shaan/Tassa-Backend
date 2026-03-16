@@ -109,3 +109,12 @@ export const getRestaurantMenu = asyncHandler(async (req: Request, res: Response
     const menu = await vendorService.getRestaurantMenu(String(req.params.restaurantId));
     ApiResponse.success(res, menu, 'Restaurant menu retrieved');
 });
+
+export const browseItems = asyncHandler(async (req: Request, res: Response) => {
+    const category = (req.query.category as string) || '';
+    const lat = parseFloat(req.query.lat as string) || 0;
+    const lng = parseFloat(req.query.lng as string) || 0;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const items = await vendorService.browseItemsByCategory(category, lat, lng, limit);
+    ApiResponse.success(res, items, 'Items retrieved');
+});

@@ -141,3 +141,7 @@ export async function getRestaurantMenu(restaurantId: string) {
     if (!restaurant) throw AppError.notFound('Restaurant not found');
     return vendorRepo.getRestaurantMenu(restaurantId);
 }
+
+export async function browseItemsByCategory(keyword: string, lat: number, lng: number, limit: number) {
+    return vendorRepo.browseItemsByCategory(keyword, lat, lng, limit);
+}

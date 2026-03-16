@@ -274,3 +274,44 @@ export async function getRestaurantMenu(restaurantId: string) {
     );
     return { categories: categories.rows, items: items.rows };
 }
+
+/**
+ * Browse menu items across all active restaurants by category keyword.
+ * If lat/lng provided, restricts to restaurants within delivery radius.
+ */
+export async function browseItemsByCategory(
+    keyword: string, lat: number = 0, lng: number = 0, limit: number = 50,
+) {
+    const likeTerm = `%${keyword.toLowerCase()}%`;
+
+    const distanceFilter = (lat !== 0 && lng !== 0) ? `
+        AND r.latitude IS NOT NULL AND r.longitude IS NOT NULL
+        AND ( 6371 * acos(
+            LEAST(1.0, cos(radians(${lat})) * cos(radians(r.latitude)) *
+            cos(radians(r.longitude) - radians(${lng})) +
+            sin(radians(${lat})) * sin(radians(r.latitude)))
+        ) ) <= COALESCE(r.delivery_radius_km, 30)
+    ` : '';
+
+    const result = await query(
+        `SELECT mi.*, r.name AS restaurant_name, r.id AS restaurant_id,
+                mc.name AS category_name
+         FROM menu_items mi
+         JOIN restaurants r ON mi.restaurant_id = r.id
+         LEFT JOIN menu_categories mc ON mi.category_id = mc.id
+         WHERE mi.status = 'available'
+           AND r.status = 'active'
+           AND (
+             LOWER(mi.name) LIKE $1
+             OR LOWER(COALESCE(mc.name, '')) LIKE $1
+             OR LOWER(COALESCE(mi.description, '')) LIKE $1
+             OR LOWER(r.name) LIKE $1
+             OR EXISTS (SELECT 1 FROM unnest(r.cuisine_types) AS ct WHERE LOWER(ct) LIKE $1)
+           )
+           ${distanceFilter}
+         ORDER BY mi.is_bestseller DESC, r.rating_avg DESC
+         LIMIT $2`,
+        [likeTerm, limit],
+    );
+    return result.rows;
+}
