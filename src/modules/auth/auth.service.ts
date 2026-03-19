@@ -207,21 +207,23 @@ export async function sendSmsOtp(
                 'An account with this phone number already exists. Please log in instead.',
             );
         }
-    } else if (requestedRole && requestedRole !== ROLES.CUSTOMER) {
-        // Login flow with a non-customer role — validate user exists with that role
+    } else {
+        // Login flow — validate user exists with the requested phone number
         const existingUser = await authRepo.findUserByPhone(e164Phone);
         if (!existingUser) {
-            const roleLabel = requestedRole === ROLES.VENDOR ? 'Seller' : 'Delivery Partner';
             throw AppError.notFound(
-                `This phone number is not registered as a ${roleLabel}. Please sign up first or choose a different role.`,
+                'This phone number is not registered. Please sign up first.',
             );
         }
-        const hasRole = await authRepo.userHasRole(existingUser.id, requestedRole);
-        if (!hasRole) {
-            const roleLabel = requestedRole === ROLES.VENDOR ? 'Seller' : 'Delivery Partner';
-            throw AppError.forbidden(
-                `This phone number is not registered as a ${roleLabel}. Please sign up first or choose a different role.`,
-            );
+        // If a specific non-customer role was requested, check role assignment
+        if (requestedRole && requestedRole !== ROLES.CUSTOMER) {
+            const hasRole = await authRepo.userHasRole(existingUser.id, requestedRole);
+            if (!hasRole) {
+                const roleLabel = requestedRole === ROLES.VENDOR ? 'Seller' : 'Delivery Partner';
+                throw AppError.forbidden(
+                    `This phone number is not registered as a ${roleLabel}. Please sign up first or choose a different role.`,
+                );
+            }
         }
     }
 

@@ -40,3 +40,23 @@ export const getRestaurantOrders = asyncHandler(async (req: Request, res: Respon
     );
     ApiResponse.success(res, result, 'Restaurant orders retrieved');
 });
+
+export const getTrendingProducts = asyncHandler(async (req: Request, res: Response) => {
+    const limit = Math.min(parseInt(req.query.limit as string) || 10, 30);
+    const result = await orderService.getTrendingProducts(limit);
+    ApiResponse.success(res, result, 'Trending products retrieved');
+});
+
+export const acceptOrderByVendor = asyncHandler(async (req: Request, res: Response) => {
+    const order = await orderService.acceptOrderByVendor(
+        String(req.params.orderId), req.user!.userId, req.body.prepTimeMin || 30,
+    );
+    ApiResponse.success(res, order, 'Order accepted');
+});
+
+export const markFoodReady = asyncHandler(async (req: Request, res: Response) => {
+    const order = await orderService.markFoodReady(
+        String(req.params.orderId), req.user!.userId,
+    );
+    ApiResponse.success(res, order, 'Food marked as ready');
+});

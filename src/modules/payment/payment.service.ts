@@ -38,7 +38,7 @@ export async function createPaymentOrder(orderId: string, userId: string) {
 
     // Check for existing payment
     const existingPayment = await paymentRepo.getPaymentByOrderId(orderId);
-    if (existingPayment && existingPayment.status === 'completed') {
+    if (existingPayment && existingPayment.status === 'captured') {
         throw AppError.conflict('Payment already completed for this order');
     }
 
@@ -121,7 +121,7 @@ export async function handleWebhook(body: Record<string, unknown>, signature: st
         const rzpPaymentId = rzpPayment.id as string;
 
         const payment = await paymentRepo.getPaymentByRazorpayOrderId(rzpOrderId);
-        if (payment && payment.status !== 'completed') {
+        if (payment && payment.status !== 'captured') {
             await paymentRepo.updatePaymentSuccess(payment.id, rzpPaymentId, '');
             await orderRepo.updateOrderStatus(payment.order_id, 'confirmed', 'pending', payment.user_id, 'payment', 'Payment captured (webhook)');
         }
@@ -145,7 +145,7 @@ export async function handleWebhook(body: Record<string, unknown>, signature: st
 export async function initiateRefund(paymentId: string, reason: string, amount?: number) {
     const payment = await paymentRepo.getPaymentById(paymentId);
     if (!payment) throw AppError.notFound('Payment not found');
-    if (payment.status !== 'completed') throw AppError.badRequest('Only completed payments can be refunded');
+    if (payment.status !== 'captured') throw AppError.badRequest('Only completed payments can be refunded');
 
     const refundAmount = amount || payment.amount;
 

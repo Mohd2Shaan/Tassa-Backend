@@ -180,13 +180,104 @@ export async function getRestaurantOrders(restaurantId: string, status: string |
     const countResult = await query(
         `SELECT COUNT(*) FROM orders o WHERE o.restaurant_id = $1 ${statusFilter}`, params,
     );
-    params.push(limit, offset);
+
+    // Fetch orders with customer name
+    const orderParams = [...params, limit, offset];
     const result = await query(
         `SELECT o.id, o.order_number, o.customer_id, o.status, o.subtotal, o.total_amount,
-         o.created_at, o.updated_at
-         FROM orders o WHERE o.restaurant_id = $1 ${statusFilter}
-         ORDER BY o.created_at DESC LIMIT $${params.length - 1} OFFSET $${params.length}`,
-        params,
+         o.created_at, o.updated_at,
+         COALESCE(u.full_name, 'Customer') AS customer_name
+         FROM orders o
+         LEFT JOIN users u ON u.id = o.customer_id
+         WHERE o.restaurant_id = $1 ${statusFilter}
+         ORDER BY o.created_at DESC LIMIT $${orderParams.length - 1} OFFSET $${orderParams.length}`,
+        orderParams,
     );
-    return { orders: result.rows, total: parseInt(countResult.rows[0].count) };
+
+    // Fetch items for all returned orders in one query
+    const orderIds = result.rows.map((r: Record<string, unknown>) => r.id);
+    let itemsMap: Record<string, Array<Record<string, unknown>>> = {};
+
+    if (orderIds.length > 0) {
+        const itemsResult = await query(
+            `SELECT oi.order_id, oi.quantity, oi.unit_price, oi.total_price,
+             COALESCE(mi.name, 'Item') AS menu_item_name
+             FROM order_items oi
+             LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
+             WHERE oi.order_id = ANY($1::uuid[])
+             ORDER BY oi.created_at`,
+            [orderIds],
+        );
+        for (const item of itemsResult.rows) {
+            const oid = item.order_id;
+            if (!itemsMap[oid]) itemsMap[oid] = [];
+            itemsMap[oid].push(item);
+        }
+    }
+
+    // Attach items to each order
+    const orders = result.rows.map((o: Record<string, unknown>) => ({
+        ...o,
+        items: itemsMap[o.id as string] || [],
+    }));
+
+    return { orders, total: parseInt(countResult.rows[0].count) };
+}
+
+export async function updatePrepTime(orderId: string, prepTimeMin: number) {
+    const result = await query(
+        `UPDATE orders SET estimated_prep_time_min = $1, updated_at = NOW()
+         WHERE id = $2 RETURNING *`,
+        [prepTimeMin, orderId],
+    );
+    return result.rows[0] || null;
+}
+
+export async function getTrendingProducts(limit: number = 10) {
+    // 1. Get top ordered menu items by quantity sum
+    const trending = await query(
+        `SELECT mi.id, mi.name, mi.description, mi.image_url, mi.price,
+         mi.discounted_price, mi.food_type, mi.status,
+         mc.name AS category_name, mc.id AS category_id,
+         r.id AS restaurant_id, r.name AS restaurant_name, r.logo_url AS restaurant_logo,
+         SUM(oi.quantity) AS order_count
+         FROM order_items oi
+         JOIN menu_items mi ON mi.id = oi.menu_item_id
+         JOIN menu_categories mc ON mc.id = mi.category_id
+         JOIN restaurants r ON r.id = mi.restaurant_id
+         WHERE mi.status = 'available' AND r.status = 'active'
+         GROUP BY mi.id, mi.name, mi.description, mi.image_url, mi.price,
+           mi.discounted_price, mi.food_type, mi.status,
+           mc.name, mc.id, r.id, r.name, r.logo_url
+         ORDER BY SUM(oi.quantity) DESC
+         LIMIT $1`,
+        [limit],
+    );
+
+    // 2. Get category IDs from trending items for variety picks
+    const categoryIds = [...new Set(trending.rows.map((r: Record<string, unknown>) => r.category_id))];
+
+    let varietyItems: Record<string, unknown>[] = [];
+    if (categoryIds.length > 0) {
+        const trendingIds = trending.rows.map((r: Record<string, unknown>) => r.id);
+        const variety = await query(
+            `SELECT mi.id, mi.name, mi.description, mi.image_url, mi.price,
+             mi.discounted_price, mi.food_type, mi.status,
+             mc.name AS category_name,
+             r.id AS restaurant_id, r.name AS restaurant_name, r.logo_url AS restaurant_logo,
+             0 AS order_count
+             FROM menu_items mi
+             JOIN menu_categories mc ON mc.id = mi.category_id
+             JOIN restaurants r ON r.id = mi.restaurant_id
+             WHERE mi.category_id = ANY($1::uuid[])
+               AND mi.id != ALL($2::uuid[])
+               AND mi.status = 'available' AND r.status = 'active'
+             ORDER BY RANDOM()
+             LIMIT 5`,
+            [categoryIds, trendingIds],
+        );
+        varietyItems = variety.rows;
+    }
+
+    return { trending: trending.rows, variety: varietyItems };
 }

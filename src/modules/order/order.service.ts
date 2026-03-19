@@ -1,8 +1,11 @@
 import * as orderRepo from './order.repository';
 import * as customerRepo from '../customer/customer.repository';
 import * as vendorRepo from '../vendor/vendor.repository';
+import * as notifService from '../notification/notification.service';
 import { AppError } from '../../utils/AppError';
 import { ORDER_TRANSITIONS } from '../../utils/constants';
+import { logger } from '../../config/logger';
+import { query } from '../../config/database';
 
 // ============================================================
 // Order Service
@@ -101,7 +104,7 @@ export async function createOrder(customerId: string, data: Record<string, unkno
         longitude: address.longitude,
     };
 
-    return orderRepo.createOrder({
+    const order = await orderRepo.createOrder({
         customerId,
         restaurantId: data.restaurantId as string,
         addressSnapshot,
@@ -118,6 +121,12 @@ export async function createOrder(customerId: string, data: Record<string, unkno
         estimatedPrepTimeMin: restaurant.avg_prep_time_min,
         items: orderItems,
     });
+
+    // --- Notify the vendor about the new order (fire-and-forget) ---
+    _notifyVendorNewOrder(restaurant.vendor_id, order, totalAmount, orderItems.length)
+        .catch((err) => logger.error('Failed to notify vendor of new order', { error: err }));
+
+    return order;
 }
 
 export async function getOrder(orderId: string, userId: string) {
@@ -148,7 +157,13 @@ export async function updateOrderStatus(
         );
     }
 
-    return orderRepo.updateOrderStatus(orderId, status, order.status, changedBy, changeSource, reason);
+    const updatedOrder = await orderRepo.updateOrderStatus(orderId, status, order.status, changedBy, changeSource, reason);
+
+    // --- Notify the customer about status change (fire-and-forget) ---
+    _notifyCustomerStatusChange(order.customer_id, orderId, status, order.total_amount)
+        .catch((err) => logger.error('Failed to notify customer of status change', { error: err }));
+
+    return updatedOrder;
 }
 
 export async function getMyOrders(customerId: string, page: number, limit: number) {
@@ -164,4 +179,128 @@ export async function getRestaurantOrders(userId: string, restaurantId: string, 
         throw AppError.forbidden('Not your restaurant');
     }
     return orderRepo.getRestaurantOrders(restaurantId, status, page, limit);
+}
+
+export async function getTrendingProducts(limit: number = 10) {
+    return orderRepo.getTrendingProducts(limit);
+}
+
+// ============================================================
+// Order Coordination — Vendor accept / food ready
+// ============================================================
+
+export async function acceptOrderByVendor(orderId: string, vendorUserId: string, prepTimeMin: number) {
+    const order = await orderRepo.getOrderById(orderId);
+    if (!order) throw AppError.notFound('Order not found');
+
+    // Verify vendor ownership
+    const vProfile = await vendorRepo.getVendorProfile(vendorUserId);
+    if (!vProfile) throw AppError.forbidden('Vendor profile required');
+    const restaurant = await vendorRepo.getRestaurantById(order.restaurant_id);
+    if (!restaurant || restaurant.vendor_id !== vProfile.id) {
+        throw AppError.forbidden('Not your restaurant');
+    }
+
+    // Update prep time and set dispatch timestamp
+    await orderRepo.updatePrepTime(orderId, prepTimeMin);
+
+    // Transition: pending/confirmed → preparing
+    const allowedFrom = ['pending', 'confirmed'];
+    if (!allowedFrom.includes(order.status)) {
+        throw AppError.badRequest(`Cannot accept order in '${order.status}' status`);
+    }
+
+    const updatedOrder = await orderRepo.updateOrderStatus(orderId, 'preparing', order.status, vendorUserId, 'vendor');
+
+    // Notify customer
+    _notifyCustomerStatusChange(order.customer_id, orderId, 'preparing', order.total_amount)
+        .catch((err: unknown) => logger.error('Failed to notify customer', { error: err }));
+
+    return updatedOrder;
+}
+
+export async function markFoodReady(orderId: string, vendorUserId: string) {
+    const order = await orderRepo.getOrderById(orderId);
+    if (!order) throw AppError.notFound('Order not found');
+
+    // Verify vendor ownership
+    const vProfile = await vendorRepo.getVendorProfile(vendorUserId);
+    if (!vProfile) throw AppError.forbidden('Vendor profile required');
+    const restaurant = await vendorRepo.getRestaurantById(order.restaurant_id);
+    if (!restaurant || restaurant.vendor_id !== vProfile.id) {
+        throw AppError.forbidden('Not your restaurant');
+    }
+
+    if (order.status !== 'preparing') {
+        throw AppError.badRequest(`Cannot mark ready from '${order.status}' status`);
+    }
+
+    const updatedOrder = await orderRepo.updateOrderStatus(orderId, 'ready_for_pickup', order.status, vendorUserId, 'vendor');
+
+    // Notify customer
+    _notifyCustomerStatusChange(order.customer_id, orderId, 'ready_for_pickup', order.total_amount)
+        .catch((err: unknown) => logger.error('Failed to notify customer', { error: err }));
+
+    return updatedOrder;
+}
+
+// ============================================================
+// Internal notification helpers
+// ============================================================
+
+/** Look up the vendor's user_id from vendor_profiles and send a new-order push. */
+async function _notifyVendorNewOrder(
+    vendorProfileId: string, order: Record<string, unknown>,
+    totalAmount: number, itemCount: number,
+) {
+    // vendor_profiles.id → user_id
+    const vpResult = await query(
+        'SELECT user_id FROM vendor_profiles WHERE id = $1', [vendorProfileId],
+    );
+    const vendorUserId = vpResult.rows[0]?.user_id;
+    if (!vendorUserId) {
+        logger.warn('Cannot notify vendor: vendor_profiles row missing', { vendorProfileId });
+        return;
+    }
+
+    await notifService.sendNotification(
+        vendorUserId,
+        'New Order! 🎉',
+        `You have a new order worth ₹${(totalAmount / 100).toFixed(0)} (${itemCount} item${itemCount > 1 ? 's' : ''})`,
+        'NEW_ORDER',
+        {
+            orderId: String(order.id),
+            restaurantId: String(order.restaurant_id),
+            type: 'NEW_ORDER',
+        },
+    );
+}
+
+/** Send status-change notification to the customer. */
+async function _notifyCustomerStatusChange(
+    customerId: string, orderId: string, newStatus: string, totalAmount: number,
+) {
+    const messages: Record<string, { title: string; body: string }> = {
+        confirmed:        { title: 'Order Confirmed! ✅',       body: 'Your order has been confirmed by the restaurant.' },
+        preparing:        { title: 'Being Prepared 🍳',         body: 'The restaurant has started preparing your order.' },
+        ready_for_pickup: { title: 'Order Ready! 📦',           body: 'Your order is ready and waiting for pickup.' },
+        out_for_delivery:  { title: 'On the Way! 🚗',           body: 'Your order is out for delivery. Get ready!' },
+        delivered:         { title: 'Delivered! 🎉',             body: `Your order worth ₹${(totalAmount / 100).toFixed(0)} has been delivered. Enjoy!` },
+        cancelled_by_vendor: { title: 'Order Cancelled ❌',     body: 'Your order has been cancelled by the restaurant.' },
+    };
+
+    const msg = messages[newStatus];
+    if (!msg) return; // No notification for unmapped statuses
+
+    await notifService.sendNotification(
+        customerId,
+        msg.title,
+        msg.body,
+        'ORDER_STATUS',
+        {
+            orderId,
+            status: newStatus,
+            type: 'ORDER_STATUS',
+        },
+    );
 }
