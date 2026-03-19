@@ -108,7 +108,7 @@ export async function assignRole(userId: string, roleName: string): Promise<void
     await query(
         `INSERT INTO user_roles (user_id, role_id)
          SELECT $1, r.id FROM roles r WHERE r.name = $2
-         ON CONFLICT (user_id, role_id) DO NOTHING`,
+         ON CONFLICT (user_id, role_id) DO UPDATE SET is_active = TRUE`,
         [userId, roleName],
     );
 }

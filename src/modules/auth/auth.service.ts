@@ -203,9 +203,14 @@ export async function sendSmsOtp(
     if (isSignup) {
         const existingUser = await authRepo.findUserByPhone(e164Phone);
         if (existingUser) {
-            throw AppError.conflict(
-                'An account with this phone number already exists. Please log in instead.',
-            );
+            const roleToCheck = requestedRole || ROLES.CUSTOMER;
+            const hasRole = await authRepo.userHasRole(existingUser.id, roleToCheck);
+            if (hasRole) {
+                const roleLabel = roleToCheck === ROLES.VENDOR ? 'Seller' : roleToCheck === ROLES.DELIVERY_PARTNER ? 'Delivery Partner' : 'Customer';
+                throw AppError.conflict(
+                    `An account with this phone number already exists as a ${roleLabel}. Please log in instead.`,
+                );
+            }
         }
     } else {
         // Login flow — validate user exists with the requested phone number
@@ -215,16 +220,11 @@ export async function sendSmsOtp(
                 'This phone number is not registered. Please sign up first.',
             );
         }
-        // If a specific non-customer role was requested, check role assignment
-        if (requestedRole && requestedRole !== ROLES.CUSTOMER) {
-            const hasRole = await authRepo.userHasRole(existingUser.id, requestedRole);
-            if (!hasRole) {
-                const roleLabel = requestedRole === ROLES.VENDOR ? 'Seller' : 'Delivery Partner';
-                throw AppError.forbidden(
-                    `This phone number is not registered as a ${roleLabel}. Please sign up first or choose a different role.`,
-                );
-            }
-        }
+        // NOTE: We no longer reject users who don't have the requested role.
+        // The verifySmsOtpAndLogin function will automatically assign the
+        // missing role after OTP verification (see cross-role assignment logic).
+        // This prevents the deadlock where login says "not registered as Seller"
+        // but signup says "phone already exists".
     }
 
     // Log the OTP send attempt
@@ -307,14 +307,11 @@ export async function verifySmsOtpAndLogin(
         roleNames.push(ROLES.CUSTOMER);
     }
 
-    // Validate existing user has the requested role
+    // Validate existing user has the requested role, or assign it if this is a cross-role signup
     if (!isNewUser && !roleNames.includes(roleToUse)) {
-        const roleLabel = roleToUse === ROLES.VENDOR ? 'Seller'
-            : roleToUse === ROLES.DELIVERY_PARTNER ? 'Delivery Partner'
-            : 'Customer';
-        throw AppError.forbidden(
-            `This phone number is not registered as a ${roleLabel}. Please sign up for this role first.`,
-        );
+        await authRepo.assignRole(user.id, roleToUse);
+        roleNames.push(roleToUse);
+        logger.info('Assigned new role to existing user', { userId: user.id, role: roleToUse });
     }
 
     // Set activeRole to what the user requested (not always CUSTOMER)
